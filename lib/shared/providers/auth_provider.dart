@@ -106,7 +106,11 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         isAuthenticated: true,
       ));
     } catch (e) {
-      state = AsyncData(AuthState(error: e.toString()));
+      // 失败时保持干净的“未登录”初始状态（不把 error 写进全局 state）。
+      // 这样 router 的登录态判断不会因 error 字段抖动，
+      // 错误信息只通过 rethrow 交给 LoginPage 局部 _errorText 显示。
+      state = const AsyncData(AuthState());
+      rethrow;
     }
   }
 
