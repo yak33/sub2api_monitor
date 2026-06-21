@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.5.0
+  sdk: '>=3.3.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -55,9 +55,19 @@ dev_dependencies:
   riverpod_generator: ^2.4.3
   custom_lint: ^0.7.0
   riverpod_lint: ^2.3.14
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
   assets:
     - assets/icons/
     - assets/images/
+
+# Flutter Launcher Icons 配置
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icons/app_icon.png"
+  adaptive_icon_background: "#0D7EF2"  # 使用图标主蓝色
+  adaptive_icon_foreground: "assets/icons/app_icon.png"
+  remove_alpha_ios: true
