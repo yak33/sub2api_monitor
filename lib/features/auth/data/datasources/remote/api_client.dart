@@ -114,6 +114,20 @@ class ApiClient {
     return response.data;
   }
 
+  /// 用户消费排行榜。GET /api/v1/admin/dashboard/users-ranking
+  /// Query params: start_date, end_date (YYYY-MM-DD), limit (default 12, max 50)
+  Future<Map<String, dynamic>> getUsersRanking({
+    String? startDate,
+    String? endDate,
+    int limit = 12,
+  }) async {
+    final qp = <String, dynamic>{'limit': limit};
+    if (startDate != null) qp['start_date'] = startDate;
+    if (endDate != null) qp['end_date'] = endDate;
+    final response = await _dio.get('/api/v1/admin/dashboard/users-ranking', queryParameters: qp);
+    return response.data;
+  }
+
   // ── Usage ──
   Future<Map<String, dynamic>> getUsage({
     int page = 1,

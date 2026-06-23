@@ -8,6 +8,7 @@ import '../domain/providers/dashboard_provider.dart';
 import '../widgets/stat_card.dart';
 import '../widgets/usage_chart.dart';
 import '../widgets/top_models_chart.dart';
+import '../widgets/user_ranking_widget.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -75,6 +76,7 @@ class DashboardPage extends ConsumerWidget {
       ]),
       if (d.dailyUsage.isNotEmpty) ...[const SizedBox(height: 24), _Label(text: '用量趋势', cs: cs), const SizedBox(height: 10), UsageChart(data: d.dailyUsage)],
       if (d.topModels.isNotEmpty) ...[const SizedBox(height: 24), _Label(text: '模型分布', cs: cs), const SizedBox(height: 10), TopModelsChart(models: d.topModels)],
+      if (d.userRanking.isNotEmpty) ...[const SizedBox(height: 24), _Label(text: '用户消费榜', cs: cs), const SizedBox(height: 10), UserRankingWidget(ranking: d.userRanking)],
     ];
   }
 

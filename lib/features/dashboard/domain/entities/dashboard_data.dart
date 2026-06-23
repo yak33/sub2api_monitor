@@ -55,6 +55,9 @@ class DashboardData {
   final List<ModelUsage> topModels;
   final List<DailyUsage> dailyUsage;
 
+  // ── 管理员专属：用户消费榜 ──
+  final List<UserRankingItem> userRanking;
+
   const DashboardData({
     this.isAdmin = false,
     this.totalBalance = 0,
@@ -91,6 +94,7 @@ class DashboardData {
     this.tpm = 0,
     this.topModels = const [],
     this.dailyUsage = const [],
+    this.userRanking = const [],
   });
 
   static double _num(Map<String, dynamic> j, List<String> keys) {
@@ -138,16 +142,18 @@ class DashboardData {
     );
   }
 
-  /// 由管理员级 stats / trend / models 三段响应拼装。
+  /// 由管理员级 stats / trend / models / ranking 四段响应拼装。
   /// 对齐 sub2api Web 版 DashboardView，端点 /api/v1/admin/dashboard/*
   factory DashboardData.fromAdminParts({
     Map<String, dynamic>? stats,
     Map<String, dynamic>? trend,
     Map<String, dynamic>? models,
+    Map<String, dynamic>? ranking,
   }) {
     final s = stats ?? const {};
     final trendList = (trend?['trend'] ?? trend?['daily_usage']) as List? ?? const [];
     final modelList = (models?['models'] ?? models?['top_models']) as List? ?? const [];
+    final rankingList = (ranking?['ranking']) as List? ?? const [];
 
     return DashboardData(
       isAdmin: true,
@@ -193,6 +199,10 @@ class DashboardData {
       topModels: modelList
           .whereType<Map<String, dynamic>>()
           .map(ModelUsage.fromJson)
+          .toList(),
+      userRanking: rankingList
+          .whereType<Map<String, dynamic>>()
+          .map(UserRankingItem.fromJson)
           .toList(),
     );
   }
@@ -240,6 +250,50 @@ class DailyUsage {
       cost: (json['cost'] as num?)?.toDouble() ?? 0,
       inputTokens: (json['input_tokens'] as num?)?.toInt() ?? 0,
       outputTokens: (json['output_tokens'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// 用户消费排行榜条目。
+/// 对应后端 GET /api/v1/admin/dashboard/users-ranking 响应的 ranking[] 元素。
+class UserRankingItem {
+  final int userId;
+  final String email;
+  final String username;
+  final double cost;
+  final double actualCost;
+  final int requests;
+  final int tokens;
+
+  const UserRankingItem({
+    required this.userId,
+    required this.email,
+    this.username = '',
+    required this.cost,
+    this.actualCost = 0,
+    required this.requests,
+    required this.tokens,
+  });
+
+  /// 显示名：优先用 username，否则取 email 前缀
+  String get displayName {
+    if (username.isNotEmpty) return username;
+    if (email.isNotEmpty) {
+      final at = email.indexOf('@');
+      return at > 0 ? email.substring(0, at) : email;
+    }
+    return 'User #$userId';
+  }
+
+  factory UserRankingItem.fromJson(Map<String, dynamic> json) {
+    return UserRankingItem(
+      userId: (json['user_id'] as num?)?.toInt() ?? 0,
+      email: json['email'] as String? ?? '',
+      username: json['username'] as String? ?? '',
+      cost: (json['cost'] as num?)?.toDouble() ?? 0,
+      actualCost: (json['actual_cost'] as num?)?.toDouble() ?? 0,
+      requests: (json['requests'] as num?)?.toInt() ?? 0,
+      tokens: (json['tokens'] as num?)?.toInt() ?? (json['total_tokens'] as num?)?.toInt() ?? 0,
     );
   }
 }

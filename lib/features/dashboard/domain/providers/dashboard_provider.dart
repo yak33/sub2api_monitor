@@ -42,17 +42,22 @@ class DashboardNotifier extends AsyncNotifier<DashboardData> {
 
     Map<String, dynamic> trendResp = const {};
     Map<String, dynamic> modelsResp = const {};
+    Map<String, dynamic> rankingResp = const {};
     try {
       trendResp = await apiClient.getAdminDashboardTrend();
     } catch (_) {}
     try {
       modelsResp = await apiClient.getAdminDashboardModels();
     } catch (_) {}
+    try {
+      rankingResp = await apiClient.getUsersRanking(limit: 12);
+    } catch (_) {}
 
     return DashboardData.fromAdminParts(
       stats: _unwrap(statsResp),
       trend: _unwrap(trendResp),
       models: _unwrap(modelsResp),
+      ranking: _unwrap(rankingResp),
     );
   }
 
