@@ -50,4 +50,3 @@ app.*.map.json
 .claude/
 /overview.md
 /scripts/test_api.sh
-/docs/API_CONTRACT_AUDIT.md

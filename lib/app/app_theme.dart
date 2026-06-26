@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 /// Sub2API Monitor — "Dual-Plane Precision" 设计系统。
@@ -179,6 +180,10 @@ class AppTheme {
         foregroundColor: cs.onSurface,
         titleTextStyle: GoogleFonts.dmSans(fontSize: 18, fontWeight: FontWeight.w700, color: cs.onSurface),
         surfaceTintColor: Colors.transparent,
+        // 浅色模式：状态栏用深色图标；暗色模式：用浅色图标
+        systemOverlayStyle: d
+            ? SystemUiOverlayStyle.light.copyWith(statusBarColor: Colors.transparent)
+            : SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
       ),
 
       cardTheme: CardThemeData(

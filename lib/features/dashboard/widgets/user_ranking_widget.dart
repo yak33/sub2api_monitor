@@ -9,7 +9,10 @@ import '../domain/entities/dashboard_data.dart';
 class UserRankingWidget extends StatelessWidget {
   final List<UserRankingItem> ranking;
 
-  const UserRankingWidget({super.key, required this.ranking});
+  /// 嵌入模式：省略自身卡片外框，交由父容器（如 [DistributionCard]）统一包裹。
+  final bool embedded;
+
+  const UserRankingWidget({super.key, required this.ranking, this.embedded = false});
 
   @override
   Widget build(BuildContext context) {
@@ -18,25 +21,29 @@ class UserRankingWidget extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final maxCost = ranking.first.cost > 0 ? ranking.first.cost : 1.0;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardTheme.color,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: ranking.asMap().entries.map((entry) {
-          final index = entry.key;
-          final item = entry.value;
-          return _RankingRow(
-            rank: index + 1,
-            item: item,
-            maxCost: maxCost,
-            cs: cs,
-          );
-        }).toList(),
-      ),
+    final content = Column(
+      children: ranking.asMap().entries.map((entry) {
+        final index = entry.key;
+        final item = entry.value;
+        return _RankingRow(
+          rank: index + 1,
+          item: item,
+          maxCost: maxCost,
+          cs: cs,
+        );
+      }).toList(),
     );
+
+    return embedded
+        ? content
+        : Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardTheme.color,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: content,
+          );
   }
 }
 

@@ -2,13 +2,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../app/app_theme.dart';
 import '../domain/entities/dashboard_data.dart';
 import '../domain/providers/dashboard_provider.dart';
 import '../widgets/stat_card.dart';
 import '../widgets/usage_chart.dart';
+import '../widgets/token_trend_chart.dart';
 import '../widgets/top_models_chart.dart';
-import '../widgets/user_ranking_widget.dart';
+import '../widgets/distribution_card.dart';
+import '../widgets/user_trend_chart.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -74,9 +75,9 @@ class DashboardPage extends ConsumerWidget {
         StatCard(title: '平均响应', value: _dur(d.averageDurationMs), icon: Icons.timer, color: cs.error,
             subtitle: '${d.activeUsers} 活跃用户'),
       ]),
-      if (d.dailyUsage.isNotEmpty) ...[const SizedBox(height: 24), _Label(text: '用量趋势', cs: cs), const SizedBox(height: 10), UsageChart(data: d.dailyUsage)],
-      if (d.topModels.isNotEmpty) ...[const SizedBox(height: 24), _Label(text: '模型分布', cs: cs), const SizedBox(height: 10), TopModelsChart(models: d.topModels)],
-      if (d.userRanking.isNotEmpty) ...[const SizedBox(height: 24), _Label(text: '用户消费榜', cs: cs), const SizedBox(height: 10), UserRankingWidget(ranking: d.userRanking)],
+      if (d.dailyUsage.isNotEmpty) ...[const SizedBox(height: 24), _Label(text: 'Token 使用趋势', cs: cs), const SizedBox(height: 10), TokenTrendChart(data: d.dailyUsage)],
+      if (d.topModels.isNotEmpty || d.userRanking.isNotEmpty) ...[const SizedBox(height: 24), _Label(text: '分布概览', cs: cs), const SizedBox(height: 10), DistributionCard(models: d.topModels, ranking: d.userRanking)],
+      if (d.userTrend.isNotEmpty) ...[const SizedBox(height: 24), _Label(text: '最近使用 (Top 12)', cs: cs), const SizedBox(height: 10), UserTrendChart(trend: d.userTrend)],
     ];
   }
 

@@ -1,4 +1,4 @@
-﻿import 'package:dio/dio.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../local/auth_storage.dart';
@@ -6,7 +6,7 @@ import 'auth_interceptor.dart';
 
 /// Sub2API 网关 HTTP 客户端。
 ///
-/// 端点路径以 sub2api 后端真实路由为准（详见 docs/API_CONTRACT_AUDIT.md）：
+/// 端点路径以 sub2api 后端真实路由为准。
 /// 个人监控优先使用用户级端点（/api/v1/usage/dashboard/*、/api/v1/keys 等），
 /// 均走 JWT 鉴权。
 class ApiClient {
@@ -125,6 +125,22 @@ class ApiClient {
     if (startDate != null) qp['start_date'] = startDate;
     if (endDate != null) qp['end_date'] = endDate;
     final response = await _dio.get('/api/v1/admin/dashboard/users-ranking', queryParameters: qp);
+    return response.data;
+  }
+
+  /// 用户用量趋势（最近使用 Top N，按用户分组的时间序列）。
+  /// GET /api/v1/admin/dashboard/users-trend
+  /// Query params: start_date, end_date (YYYY-MM-DD), granularity (day/hour), limit (default 12)
+  Future<Map<String, dynamic>> getUserUsageTrend({
+    String? startDate,
+    String? endDate,
+    String granularity = 'hour',
+    int limit = 12,
+  }) async {
+    final qp = <String, dynamic>{'granularity': granularity, 'limit': limit};
+    if (startDate != null) qp['start_date'] = startDate;
+    if (endDate != null) qp['end_date'] = endDate;
+    final response = await _dio.get('/api/v1/admin/dashboard/users-trend', queryParameters: qp);
     return response.data;
   }
 

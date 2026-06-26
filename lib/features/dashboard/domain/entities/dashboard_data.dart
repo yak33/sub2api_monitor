@@ -58,6 +58,9 @@ class DashboardData {
   // ── 管理员专属：用户消费榜 ──
   final List<UserRankingItem> userRanking;
 
+  // ── 管理员专属：用户用量趋势（最近使用 Top 12）──
+  final UserUsageTrend userTrend;
+
   const DashboardData({
     this.isAdmin = false,
     this.totalBalance = 0,
@@ -95,6 +98,7 @@ class DashboardData {
     this.topModels = const [],
     this.dailyUsage = const [],
     this.userRanking = const [],
+    this.userTrend = const UserUsageTrend(),
   });
 
   static double _num(Map<String, dynamic> j, List<String> keys) {
@@ -149,11 +153,13 @@ class DashboardData {
     Map<String, dynamic>? trend,
     Map<String, dynamic>? models,
     Map<String, dynamic>? ranking,
+    Map<String, dynamic>? usersTrend,
   }) {
     final s = stats ?? const {};
     final trendList = (trend?['trend'] ?? trend?['daily_usage']) as List? ?? const [];
     final modelList = (models?['models'] ?? models?['top_models']) as List? ?? const [];
     final rankingList = (ranking?['ranking']) as List? ?? const [];
+    final usersTrendList = (usersTrend?['trend']) as List? ?? const [];
 
     return DashboardData(
       isAdmin: true,
@@ -204,6 +210,7 @@ class DashboardData {
           .whereType<Map<String, dynamic>>()
           .map(UserRankingItem.fromJson)
           .toList(),
+      userTrend: UserUsageTrend.fromPoints(usersTrendList),
     );
   }
 
@@ -215,43 +222,158 @@ class DashboardData {
 class ModelUsage {
   final String model;
   final int requests;
+  final int tokens;
   final double cost;
+  final double actualCost;
 
-  const ModelUsage({required this.model, required this.requests, required this.cost});
+  const ModelUsage({
+    required this.model,
+    required this.requests,
+    this.tokens = 0,
+    required this.cost,
+    this.actualCost = 0,
+  });
 
   factory ModelUsage.fromJson(Map<String, dynamic> json) {
     return ModelUsage(
       model: json['model'] as String? ?? '',
       requests: (json['requests'] as num?)?.toInt() ?? 0,
+      tokens: (json['total_tokens'] as num?)?.toInt() ?? (json['tokens'] as num?)?.toInt() ?? 0,
       cost: (json['cost'] as num?)?.toDouble() ?? 0,
+      actualCost: (json['actual_cost'] as num?)?.toDouble() ?? 0,
     );
   }
 }
 
+/// 用量趋势单点。
+///
+/// 对齐 sub2api Web 版 TokenUsageTrend：除请求/成本外，细分四类 Token
+/// （输入 / 输出 / 缓存写入 / 缓存读取），缓存命中率由前端按
+/// `cache_read / (input + cache_read + cache_creation)` 实时计算，非服务端字段。
 class DailyUsage {
   final DateTime date;
   final int requests;
   final double cost;
+  final double actualCost;
   final int inputTokens;
   final int outputTokens;
+  final int cacheCreationTokens;
+  final int cacheReadTokens;
 
   const DailyUsage({
     required this.date,
     required this.requests,
     required this.cost,
+    this.actualCost = 0,
     required this.inputTokens,
     required this.outputTokens,
+    this.cacheCreationTokens = 0,
+    this.cacheReadTokens = 0,
   });
+
+  /// 四类 Token 合计，用于趋势图纵轴量纲。
+  int get totalTokens => inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
+
+  /// 缓存命中率（百分比，0~100）。分母为可命中的 prompt 侧 Token。
+  double get cacheHitRate {
+    final promptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
+    if (promptTokens <= 0) return 0;
+    return cacheReadTokens / promptTokens * 100;
+  }
 
   factory DailyUsage.fromJson(Map<String, dynamic> json) {
     return DailyUsage(
       date: DateTime.tryParse(json['date'] as String? ?? '') ?? DateTime.now(),
       requests: (json['requests'] as num?)?.toInt() ?? 0,
       cost: (json['cost'] as num?)?.toDouble() ?? 0,
+      actualCost: (json['actual_cost'] as num?)?.toDouble() ?? 0,
       inputTokens: (json['input_tokens'] as num?)?.toInt() ?? 0,
       outputTokens: (json['output_tokens'] as num?)?.toInt() ?? 0,
+      cacheCreationTokens: (json['cache_creation_tokens'] as num?)?.toInt() ?? 0,
+      cacheReadTokens: (json['cache_read_tokens'] as num?)?.toInt() ?? 0,
     );
   }
+}
+
+/// 用户用量趋势（管理员专属，对齐 Web 版「最近使用 Top 12」）。
+///
+/// 后端 GET /api/v1/admin/dashboard/users-trend 返回**扁平**的点列表，
+/// 每点形如 `{user_id, username, email, date, tokens}`；此处按 user_id 聚合为
+/// 「统一时间轴 + 每用户一条序列」的矩阵结构，UI 直接消费、无需再做分组。
+class UserUsageTrend {
+  /// 升序去重后的时间标签，作为所有序列共享的 X 轴。
+  final List<String> dates;
+
+  /// 每个用户一条序列，已按总用量降序（图例与高亮顺序更符合直觉）。
+  final List<UserTrendSeries> series;
+
+  const UserUsageTrend({this.dates = const [], this.series = const []});
+
+  bool get isEmpty => series.isEmpty || dates.isEmpty;
+  bool get isNotEmpty => !isEmpty;
+
+  /// 由扁平点列表聚合。缺失的 (用户, 时间) 组合补 0，保证各序列等长对齐。
+  factory UserUsageTrend.fromPoints(List<dynamic> points) {
+    final dateSet = <String>{};
+    // user_id -> (显示名, date -> tokens)
+    final groups = <int, _UserAccumulator>{};
+
+    for (final raw in points) {
+      if (raw is! Map<String, dynamic>) continue;
+      final date = raw['date'] as String? ?? '';
+      if (date.isEmpty) continue;
+      dateSet.add(date);
+
+      final userId = (raw['user_id'] as num?)?.toInt() ?? 0;
+      final tokens = (raw['tokens'] as num?)?.toInt() ??
+          (raw['total_tokens'] as num?)?.toInt() ??
+          0;
+      groups
+          .putIfAbsent(userId, () => _UserAccumulator(_displayName(raw, userId)))
+          .points[date] = tokens;
+    }
+
+    final sortedDates = dateSet.toList()..sort();
+    final series = groups.entries
+        .map((e) => UserTrendSeries(
+              userId: e.key,
+              name: e.value.name,
+              values: sortedDates.map((d) => e.value.points[d] ?? 0).toList(),
+            ))
+        .toList()
+      ..sort((a, b) => b.total.compareTo(a.total));
+
+    return UserUsageTrend(dates: sortedDates, series: series);
+  }
+
+  /// 显示名：username 优先，其次 email，最后兜底 `User #id`。
+  static String _displayName(Map<String, dynamic> json, int userId) {
+    final username = (json['username'] as String? ?? '').trim();
+    if (username.isNotEmpty) return username;
+    final email = (json['email'] as String? ?? '').trim();
+    if (email.isNotEmpty) {
+      final at = email.indexOf('@');
+      return at > 0 ? email.substring(0, at) : email;
+    }
+    return 'User #$userId';
+  }
+}
+
+class _UserAccumulator {
+  final String name;
+  final Map<String, int> points = {};
+  _UserAccumulator(this.name);
+}
+
+/// 单个用户的趋势序列，[values] 与 [UserUsageTrend.dates] 等长对齐。
+class UserTrendSeries {
+  final int userId;
+  final String name;
+  final List<int> values;
+
+  const UserTrendSeries({required this.userId, required this.name, required this.values});
+
+  int get total => values.fold(0, (sum, v) => sum + v);
 }
 
 /// 用户消费排行榜条目。
