@@ -38,30 +38,79 @@ class DashboardNotifier extends AsyncNotifier<DashboardData> {
 
   /// 管理员级仪表盘：对齐 sub2api Web DashboardView。
   Future<DashboardData> _fetchAdminDashboard(ApiClient apiClient) async {
-    final statsResp = await apiClient.getAdminDashboardStats();
+    // 发起并行的网络请求，优化页面加载性能，并将可能出错的图表请求做安全防崩溃捕获
+    final statsFuture = apiClient.getAdminDashboardStats();
+    final trendFuture = apiClient.getAdminDashboardTrend().catchError((_) => <String, dynamic>{});
+    final modelsFuture = apiClient.getAdminDashboardModels().catchError((_) => <String, dynamic>{});
+    final rankingFuture = apiClient.getUsersRanking(limit: 12).catchError((_) => <String, dynamic>{});
+    final usersTrendFuture = apiClient.getUserUsageTrend(limit: 12).catchError((_) => <String, dynamic>{});
+    // 拉取前 100 名活跃用户用于做 ID -> Username 的前端动态映射
+    final usersListFuture = apiClient.getAdminUsers(pageSize: 100).catchError((_) => <String, dynamic>{});
 
-    Map<String, dynamic> trendResp = const {};
-    Map<String, dynamic> modelsResp = const {};
-    Map<String, dynamic> rankingResp = const {};
-    Map<String, dynamic> usersTrendResp = const {};
+    final results = await Future.wait([
+      statsFuture,
+      trendFuture,
+      modelsFuture,
+      rankingFuture,
+      usersTrendFuture,
+      usersListFuture,
+    ]);
+
+    final statsResp = results[0];
+    final trendResp = results[1];
+    final modelsResp = results[2];
+    
+    // 剥离外信封并复制为可修改的 Map
+    final rawRanking = results[3];
+    final Map<String, dynamic> rankingResp = Map<String, dynamic>.from(
+      (rawRanking['data'] as Map<String, dynamic>?) ?? rawRanking
+    );
+    
+    final usersTrendResp = results[4];
+    final usersListResp = results[5];
+
+    // 1. 在前端内存中构建用户 ID 与 Username 的 Key-Value 映射
+    final userMap = <int, String>{};
     try {
-      trendResp = await apiClient.getAdminDashboardTrend();
+      final listData = (usersListResp['data'] as Map<String, dynamic>?) ?? usersListResp;
+      final items = listData['items'] as List?;
+      if (items != null) {
+        for (var item in items) {
+          if (item is Map<String, dynamic>) {
+            final id = (item['id'] as num?)?.toInt();
+            final name = item['username']?.toString() ?? '';
+            if (id != null && name.isNotEmpty) {
+              userMap[id] = name;
+            }
+          }
+        }
+      }
     } catch (_) {}
+
+    // 2. 将获取到的用户名动态缝合到消费榜的 DTO 数据中
     try {
-      modelsResp = await apiClient.getAdminDashboardModels();
-    } catch (_) {}
-    try {
-      rankingResp = await apiClient.getUsersRanking(limit: 12);
-    } catch (_) {}
-    try {
-      usersTrendResp = await apiClient.getUserUsageTrend(limit: 12);
+      final rankingList = rankingResp['ranking'] as List?;
+      if (rankingList != null) {
+        final mergedRanking = <Map<String, dynamic>>[];
+        for (var item in rankingList) {
+          if (item is Map<String, dynamic>) {
+            final mutableItem = Map<String, dynamic>.from(item);
+            final uid = (mutableItem['user_id'] as num?)?.toInt();
+            if (uid != null && userMap.containsKey(uid)) {
+              mutableItem['username'] = userMap[uid];
+            }
+            mergedRanking.add(mutableItem);
+          }
+        }
+        rankingResp['ranking'] = mergedRanking;
+      }
     } catch (_) {}
 
     return DashboardData.fromAdminParts(
       stats: _unwrap(statsResp),
       trend: _unwrap(trendResp),
       models: _unwrap(modelsResp),
-      ranking: _unwrap(rankingResp),
+      ranking: rankingResp, // 已完成前端用户名动态缝合
       usersTrend: _unwrap(usersTrendResp),
     );
   }

@@ -49,8 +49,16 @@ class _DistributionCardState extends State<DistributionCard> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardTheme.color,
+        color: cs.surfaceContainer,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: cs.primary.withValues(alpha: 0.03),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          )
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -62,17 +70,45 @@ class _DistributionCardState extends State<DistributionCard> {
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: cs.onSurface),
               ),
               const Spacer(),
-              if (showToggle) _Toggle(tab: tab, onChanged: (v) => setState(() => _tab = v), cs: cs),
+              if (showToggle) 
+                SizedBox(
+                  width: 160,
+                  child: _Toggle(tab: tab, onChanged: (v) => setState(() => _tab = v), cs: cs),
+                ),
             ],
           ),
           const SizedBox(height: 16),
-          _Donut(segments: _segments(isModels), centerLabel: _centerLabel(isModels), cs: cs),
-          const SizedBox(height: 18),
-          Divider(color: cs.outlineVariant, height: 1),
-          const SizedBox(height: 14),
-          isModels
-              ? TopModelsChart(models: widget.models, embedded: true)
-              : UserRankingWidget(ranking: widget.ranking, embedded: true),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 350),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (Widget child, Animation<double> animation) {
+              final slide = Tween<Offset>(
+                begin: const Offset(0.04, 0.0),
+                end: Offset.zero,
+              ).animate(animation);
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: slide,
+                  child: child,
+                ),
+              );
+            },
+            child: Column(
+              key: ValueKey<int>(tab),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Donut(segments: _segments(isModels), centerLabel: _centerLabel(isModels), cs: cs),
+                const SizedBox(height: 18),
+                Divider(color: cs.outlineVariant, height: 1),
+                const SizedBox(height: 14),
+                isModels
+                    ? TopModelsChart(models: widget.models, embedded: true)
+                    : UserRankingWidget(ranking: widget.ranking, embedded: true),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -122,7 +158,7 @@ class _Segment {
   const _Segment(this.value, this.color);
 }
 
-/// 分段切换控件（紧凑胶囊样式，呼应 Web 版右上角 toggle）。
+/// 精美分段选择控件（滑块背景物理跟随动效）。
 class _Toggle extends StatelessWidget {
   final int tab;
   final ValueChanged<int> onChanged;
@@ -133,39 +169,80 @@ class _Toggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(3),
+      height: 28,
+      padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Row(
-        children: [
-          _seg('模型分布', 0),
-          _seg('消费榜', 1),
-        ],
-      ),
-    );
-  }
-
-  Widget _seg(String label, int value) {
-    final active = tab == value;
-    return GestureDetector(
-      onTap: () => onChanged(value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          color: active ? cs.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-            color: active ? cs.primary : cs.onSurfaceVariant,
-          ),
-        ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth / 2;
+          return Stack(
+            children: [
+              // 物理跟随滑动背景
+              AnimatedAlign(
+                alignment: tab == 0 ? Alignment.centerLeft : Alignment.centerRight,
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOutCubic,
+                child: Container(
+                  width: width,
+                  height: double.infinity,
+                  decoration: BoxDecoration(
+                    color: cs.surface,
+                    borderRadius: BorderRadius.circular(6),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 3,
+                        offset: const Offset(0, 1),
+                      )
+                    ],
+                  ),
+                ),
+              ),
+              // 点击区域与文本渐变
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => onChanged(0),
+                      behavior: HitTestBehavior.opaque,
+                      child: Center(
+                        child: AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 200),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: tab == 0 ? FontWeight.w600 : FontWeight.w500,
+                            color: tab == 0 ? cs.primary : cs.onSurfaceVariant,
+                          ),
+                          child: const Text('模型分布'),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => onChanged(1),
+                      behavior: HitTestBehavior.opaque,
+                      child: Center(
+                        child: AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 200),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: tab == 1 ? FontWeight.w600 : FontWeight.w500,
+                            color: tab == 1 ? cs.primary : cs.onSurfaceVariant,
+                          ),
+                          child: const Text('消费榜'),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }

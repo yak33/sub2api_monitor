@@ -1,4 +1,4 @@
-﻿/// 仪表盘聚合数据。
+/// 仪表盘聚合数据。
 ///
 /// 支持两种模式：
 /// - **用户级**（个人监控）：由 /api/v1/usage/dashboard/* 端点拼装
@@ -397,13 +397,10 @@ class UserRankingItem {
     required this.tokens,
   });
 
-  /// 显示名：优先用 username，否则取 email 前缀
+  /// 显示名：优先用 username，否则取完整 email
   String get displayName {
     if (username.isNotEmpty) return username;
-    if (email.isNotEmpty) {
-      final at = email.indexOf('@');
-      return at > 0 ? email.substring(0, at) : email;
-    }
+    if (email.isNotEmpty) return email;
     return 'User #$userId';
   }
 
@@ -412,7 +409,7 @@ class UserRankingItem {
       userId: (json['user_id'] as num?)?.toInt() ?? 0,
       email: json['email'] as String? ?? '',
       username: json['username'] as String? ?? '',
-      cost: (json['cost'] as num?)?.toDouble() ?? 0,
+      cost: (json['cost'] as num?)?.toDouble() ?? (json['actual_cost'] as num?)?.toDouble() ?? 0,
       actualCost: (json['actual_cost'] as num?)?.toDouble() ?? 0,
       requests: (json['requests'] as num?)?.toInt() ?? 0,
       tokens: (json['tokens'] as num?)?.toInt() ?? (json['total_tokens'] as num?)?.toInt() ?? 0,

@@ -135,6 +135,8 @@ class TokenTrendChart extends StatelessWidget {
         touchTooltipData: LineTouchTooltipData(
           getTooltipColor: (_) => cs.inverseSurface,
           tooltipRoundedRadius: 8,
+          fitInsideHorizontally: true,
+          fitInsideVertically: true,
           getTooltipItems: (spots) => spots.map((spot) {
             final isRate = spot.barIndex == _series.length;
             final label = isRate ? '命中率' : _series[spot.barIndex].label;

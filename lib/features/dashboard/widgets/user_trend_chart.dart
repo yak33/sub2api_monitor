@@ -119,9 +119,13 @@ class _UserTrendChartState extends State<UserTrendChart> {
               if (t.dates.length > 9 && i % step != 0 && i != t.dates.length - 1) {
                 return const SizedBox.shrink();
               }
-              return Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(_dateLabel(t.dates[i]), style: TextStyle(fontSize: 8, color: cs.onSurfaceVariant)),
+              return SideTitleWidget(
+                axisSide: AxisSide.bottom,
+                space: 6,
+                child: Text(
+                  _dateLabel(t.dates[i]),
+                  style: TextStyle(fontSize: 8, fontWeight: FontWeight.w500, color: cs.onSurfaceVariant),
+                ),
               );
             },
           ),
@@ -134,6 +138,8 @@ class _UserTrendChartState extends State<UserTrendChart> {
         touchTooltipData: LineTouchTooltipData(
           getTooltipColor: (_) => cs.inverseSurface,
           tooltipRoundedRadius: 8,
+          fitInsideHorizontally: true,
+          fitInsideVertically: true,
           getTooltipItems: (spots) => spots.map((spot) {
             final s = t.series[spot.barIndex];
             return LineTooltipItem(
@@ -160,12 +166,32 @@ class _UserTrendChartState extends State<UserTrendChart> {
     );
   }
 
-  /// 时间标签：优先解析为 `M/d HH时`，无法解析时退化为原串尾部。
+  /// 时间标签：强力解析后端时间字符串，将其格式化为紧凑的 `M/d HH:00`，兼顾日期与时间且防止重叠截断。
   String _dateLabel(String raw) {
+    // 1. 尝试以 ISO/标准格式解析
     final dt = DateTime.tryParse(raw);
     if (dt != null) {
-      return dt.hour == 0 ? '${dt.month}/${dt.day}' : '${dt.month}/${dt.day} ${dt.hour}时';
+      return dt.hour == 0
+          ? '${dt.month}/${dt.day}'
+          : '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:00';
     }
+
+    // 2. 针对非标准空格分割格式 (例如 "2026-06-25 16:00:00") 手动解析
+    try {
+      final parts = raw.split(' ');
+      if (parts.length >= 2) {
+        final dateParts = parts[0].split('-');
+        final timeParts = parts[1].split(':');
+        if (dateParts.length >= 3 && timeParts.length >= 1) {
+          final month = int.parse(dateParts[1]);
+          final day = int.parse(dateParts[2]);
+          final hour = int.parse(timeParts[0]);
+          return '$month/$day ${hour.toString().padLeft(2, '0')}:00';
+        }
+      }
+    } catch (_) {}
+
+    // 3. 极速降级兜底（保留尾部主要时间段）
     return raw.length > 5 ? raw.substring(raw.length - 5) : raw;
   }
 
