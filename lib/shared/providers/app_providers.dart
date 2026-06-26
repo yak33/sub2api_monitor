@@ -31,13 +31,13 @@ final baseUrlProvider = StateNotifierProvider<BaseUrlNotifier, String>((ref) {
 });
 
 class BaseUrlNotifier extends StateNotifier<String> {
-  BaseUrlNotifier() : super('http://localhost:8080') {
+  BaseUrlNotifier() : super('http://localhost:9527') {
     _load();
   }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    state = prefs.getString('base_url') ?? 'http://localhost:8080';
+    state = prefs.getString('base_url') ?? 'http://localhost:9527';
   }
 
   Future<void> setBaseUrl(String url) async {

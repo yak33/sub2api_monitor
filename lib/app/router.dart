@@ -2,15 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/accounts/presentation/accounts_page.dart';
+import '../features/accounts/presentation/account_edit_page.dart';
+import '../features/accounts/domain/entities/admin_account.dart';
 import '../features/auth/presentation/login_page.dart';
 import '../features/dashboard/presentation/dashboard_page.dart';
+import '../features/groups/presentation/groups_page.dart';
+import '../features/groups/presentation/group_edit_page.dart';
+import '../features/groups/domain/entities/group.dart';
 import '../features/keys/presentation/keys_page.dart';
-import '../features/users/presentation/users_page.dart';
-import '../features/users/presentation/user_detail_page.dart';
-import '../features/accounts/presentation/accounts_page.dart';
-import '../features/subscriptions/presentation/subscriptions_page.dart';
 import '../features/profile/presentation/profile_page.dart';
 import '../features/settings/presentation/settings_page.dart';
+import '../features/subscriptions/presentation/subscriptions_page.dart';
+import '../features/users/presentation/user_balance_history_page.dart';
+import '../features/users/presentation/user_detail_page.dart';
+import '../features/users/presentation/users_page.dart';
 import '../shared/presentation/main_shell.dart';
 import '../shared/providers/auth_provider.dart';
 
@@ -70,13 +76,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
           GoRoute(
-            path: '/accounts',
-            name: 'accounts',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: AccountsPage(),
-            ),
-          ),
-          GoRoute(
             path: '/users',
             name: 'users',
             pageBuilder: (context, state) => const NoTransitionPage(
@@ -90,8 +89,32 @@ final routerProvider = Provider<GoRouter>((ref) {
                   final id = int.tryParse(state.pathParameters['id'] ?? '') ?? 0;
                   return UserDetailPage(userId: id);
                 },
+                routes: [
+                  GoRoute(
+                    path: 'balance-history',
+                    name: 'userBalanceHistory',
+                    builder: (context, state) {
+                      final id = int.tryParse(state.pathParameters['id'] ?? '') ?? 0;
+                      return UserBalanceHistoryPage(userId: id);
+                    },
+                  ),
+                ],
               ),
             ],
+          ),
+          GoRoute(
+            path: '/accounts',
+            name: 'accounts',
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: AccountsPage(),
+            ),
+          ),
+          GoRoute(
+            path: '/groups',
+            name: 'groups',
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: GroupsPage(),
+            ),
           ),
           GoRoute(
             path: '/profile',
@@ -112,6 +135,22 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/subscriptions',
         name: 'subscriptions',
         builder: (context, state) => const SubscriptionsPage(),
+      ),
+      GoRoute(
+        path: '/groups/edit',
+        name: 'groupEdit',
+        builder: (context, state) {
+          final group = state.extra as AdminGroup?;
+          return GroupEditPage(group: group);
+        },
+      ),
+      GoRoute(
+        path: '/accounts/edit',
+        name: 'accountEdit',
+        builder: (context, state) {
+          final account = state.extra as AdminAccount?;
+          return AccountEditPage(account: account);
+        },
       ),
       GoRoute(
         path: '/settings',

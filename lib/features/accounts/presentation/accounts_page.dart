@@ -1,5 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../app/app_theme.dart';
 import '../domain/entities/admin_account.dart';
@@ -44,6 +45,7 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
           if (state.error != null) SliverToBoxAdapter(child: _Err(msg: state.error!, onRetry: n.refresh, cs: cs))
           else if (state.items.isEmpty && !state.isLoading) const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(40), child: Center(child: Text('暂无账号', style: TextStyle(fontSize: 14)))))
           else SliverList(delegate: SliverChildBuilderDelegate((_, i) => _Card(account: state.items[i], cs: cs,
+            onTap: () => context.pushNamed('accountEdit', extra: state.items[i]),
             onTest: () => _test(n, state.items[i]),
             onClearError: () => n.clearError(state.items[i].id),
             onRecover: () => n.recoverState(state.items[i].id),
@@ -97,11 +99,13 @@ class _Err extends StatelessWidget {
 
 class _Card extends StatelessWidget {
   final AdminAccount account; final ColorScheme cs;
-  final VoidCallback onTest, onClearError, onRecover, onRefresh, onDelete;
-  const _Card({required this.account, required this.cs, required this.onTest, required this.onClearError, required this.onRecover, required this.onRefresh, required this.onDelete});
+  final VoidCallback onTap, onTest, onClearError, onRecover, onRefresh, onDelete;
+  const _Card({required this.account, required this.cs, required this.onTap, required this.onTest, required this.onClearError, required this.onRecover, required this.onRefresh, required this.onDelete});
 
   @override
-  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5), child: Container(
+  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5), child: GestureDetector(
+    onTap: onTap,
+    child: Container(
     padding: const EdgeInsets.all(14),
     decoration: AppTheme.cardDecoration(cs),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -127,7 +131,7 @@ class _Card extends StatelessWidget {
       if (account.quotaDailyUsed != null && account.quotaDailyLimit != null) ...[const SizedBox(height: 8), _QBar(label: '日', used: account.quotaDailyUsed!, limit: account.quotaDailyLimit!, cs: cs)],
       if (account.errorMessage != null && account.errorMessage!.isNotEmpty) ...[const SizedBox(height: 6), Text(account.errorMessage!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: cs.error))],
     ]),
-  ));
+  )));
 
   static PopupMenuItem<String> _pi(IconData icon, String label, String value, ColorScheme cs, {bool danger = false}) {
     final c = danger ? cs.error : cs.onSurfaceVariant;

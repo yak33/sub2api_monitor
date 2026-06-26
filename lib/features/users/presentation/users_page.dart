@@ -130,6 +130,7 @@ class _UsersPageState extends ConsumerState<UsersPage> {
             onEdit: () => _showFormDialog(context, ref, user: state.items[index]),
             onBalance: () => _showBalanceDialog(context, ref, state.items[index]),
             onDelete: () => _confirmDelete(context, ref, state.items[index]),
+            onHistory: () => context.push('/users/${state.items[index].id}/balance-history'),
           );
         },
       ),
@@ -194,6 +195,7 @@ class _UserCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onBalance;
   final VoidCallback onDelete;
+  final VoidCallback onHistory;
 
   const _UserCard({
     required this.user,
@@ -201,6 +203,7 @@ class _UserCard extends StatelessWidget {
     required this.onEdit,
     required this.onBalance,
     required this.onDelete,
+    required this.onHistory,
   });
 
   @override
@@ -287,6 +290,8 @@ class _UserCard extends StatelessWidget {
                             onEdit();
                           case 'balance':
                             onBalance();
+                          case 'history':
+                            onHistory();
                           case 'delete':
                             onDelete();
                         }
@@ -294,6 +299,7 @@ class _UserCard extends StatelessWidget {
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: 'edit', child: Text('编辑')),
                         PopupMenuItem(value: 'balance', child: Text('调整余额')),
+                        PopupMenuItem(value: 'history', child: Text('充值记录')),
                         PopupMenuItem(value: 'delete', child: Text('删除')),
                       ],
                     ),

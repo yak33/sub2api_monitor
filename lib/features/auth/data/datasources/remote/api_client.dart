@@ -485,4 +485,158 @@ class ApiClient {
     final response = await _dio.get('/api/v1/admin/users/$userId/subscriptions');
     return response.data;
   }
+
+  /// 获取用户余额变动历史记录（充值/消费记录）。
+  ///
+  /// [userId] 目标用户的ID
+  /// [page] 分页页码
+  /// [pageSize] 分页大小
+  /// [type] 变动记录类型筛选，如 balance, affiliate_balance, admin_balance 等
+  ///
+  /// @author ZHANGCHAO
+  /// @date 2026/06/27
+  Future<Map<String, dynamic>> getUserBalanceHistory(
+    int userId, {
+    int page = 1,
+    int pageSize = 20,
+    String? type,
+  }) async {
+    final qp = <String, dynamic>{
+      'page': page,
+      'page_size': pageSize,
+    };
+    if (type != null && type.isNotEmpty) {
+      qp['type'] = type;
+    }
+    final response = await _dio.get(
+      '/api/v1/admin/users/$userId/balance-history',
+      queryParameters: qp,
+    );
+    return response.data;
+  }
+
+  // ── Admin Groups（管理员级分组管理，端点 /api/v1/admin/groups）──
+
+  /// 获取分组列表（分页 + 过滤）。
+  ///
+  /// [page] 分页页码
+  /// [pageSize] 分页大小
+  /// [search] 搜索关键字
+  /// [platform] 筛选平台
+  /// [status] 筛选状态
+  ///
+  /// @author ZHANGCHAO
+  /// @date 2026/06/27
+  Future<Map<String, dynamic>> getAdminGroups({
+    int page = 1,
+    int pageSize = 20,
+    String? search,
+    String? platform,
+    String? status,
+  }) async {
+    final qp = <String, dynamic>{
+      'page': page,
+      'page_size': pageSize,
+    };
+    if (search != null && search.isNotEmpty) qp['search'] = search;
+    if (platform != null && platform.isNotEmpty) qp['platform'] = platform;
+    if (status != null && status.isNotEmpty) qp['status'] = status;
+    final response = await _dio.get('/api/v1/admin/groups', queryParameters: qp);
+    return response.data;
+  }
+
+  /// 获取单个分组详情。
+  ///
+  /// @author ZHANGCHAO
+  /// @date 2026/06/27
+  Future<Map<String, dynamic>> getAdminGroup(int id) async {
+    final response = await _dio.get('/api/v1/admin/groups/$id');
+    return response.data;
+  }
+
+  /// 创建分组。
+  ///
+  /// @author ZHANGCHAO
+  /// @date 2026/06/27
+  Future<Map<String, dynamic>> createAdminGroup(Map<String, dynamic> data) async {
+    final response = await _dio.post('/api/v1/admin/groups', data: data);
+    return response.data;
+  }
+
+  /// 更新分组。
+  ///
+  /// @author ZHANGCHAO
+  /// @date 2026/06/27
+  Future<Map<String, dynamic>> updateAdminGroup(int id, Map<String, dynamic> data) async {
+    final response = await _dio.put('/api/v1/admin/groups/$id', data: data);
+    return response.data;
+  }
+
+  /// 删除分组。
+  ///
+  /// @author ZHANGCHAO
+  /// @date 2026/06/27
+  Future<void> deleteAdminGroup(int id) async {
+    await _dio.delete('/api/v1/admin/groups/$id');
+  }
+
+  /// 获取分组专属费率倍率及 RPM 条目。
+  ///
+  /// @author ZHANGCHAO
+  /// @date 2026/06/27
+  Future<List<dynamic>> getGroupRateMultipliers(int id) async {
+    final response = await _dio.get('/api/v1/admin/groups/$id/rate-multipliers');
+    final data = (response.data['data'] as List?) ?? response.data;
+    return data ?? const [];
+  }
+
+  /// 批量设置分组下的专属计费倍率。
+  ///
+  /// [entries] 用户专属倍率条目列表，例如 `[{"user_id": 1, "rate_multiplier": 1.5}]`
+  ///
+  /// @author ZHANGCHAO
+  /// @date 2026/06/27
+  Future<Map<String, dynamic>> updateGroupRateMultipliers(
+    int id,
+    List<Map<String, dynamic>> entries,
+  ) async {
+    final response = await _dio.put(
+      '/api/v1/admin/groups/$id/rate-multipliers',
+      data: {'entries': entries},
+    );
+    return response.data;
+  }
+
+  /// 清空分组下所有的专属计费倍率。
+  ///
+  /// @author ZHANGCHAO
+  /// @date 2026/06/27
+  Future<void> clearGroupRateMultipliers(int id) async {
+    await _dio.delete('/api/v1/admin/groups/$id/rate-multipliers');
+  }
+
+  /// 批量设置分组下的专属 RPM。
+  ///
+  /// [entries] 用户专属 RPM 覆盖列表，例如 `[{"user_id": 1, "rpm_override": 100}]`
+  ///
+  /// @author ZHANGCHAO
+  /// @date 2026/06/27
+  Future<Map<String, dynamic>> updateGroupRpmOverrides(
+    int id,
+    List<Map<String, dynamic>> entries,
+  ) async {
+    final response = await _dio.put(
+      '/api/v1/admin/groups/$id/rpm-overrides',
+      data: {'entries': entries},
+    );
+    return response.data;
+  }
+
+  /// 清空分组下所有的专属 RPM 限制。
+  ///
+  /// @author ZHANGCHAO
+  /// @date 2026/06/27
+  Future<void> clearGroupRpmOverrides(int id) async {
+    await _dio.delete('/api/v1/admin/groups/$id/rpm-overrides');
+  }
 }

@@ -1,5 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../domain/entities/admin_user.dart';
 import '../domain/providers/users_provider.dart';
@@ -15,7 +16,16 @@ class UserDetailPage extends ConsumerWidget {
     final usageAsync = ref.watch(adminUserUsageProvider(userId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('用户详情')),
+      appBar: AppBar(
+        title: const Text('用户详情'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: '变动历史',
+            onPressed: () => context.push('/users/$userId/balance-history'),
+          ),
+        ],
+      ),
       body: userAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, _) => Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -76,7 +86,13 @@ class _Info extends StatelessWidget {
       const SizedBox(height: 12),
       _Row(label: '用户 ID', value: '${user.id}', cs: cs),
       _Row(label: '余额', value: '\$${user.balance.toStringAsFixed(4)}', cs: cs),
-      _Row(label: '累计充值', value: '\$${user.totalRecharged.toStringAsFixed(2)}', cs: cs),
+      _Row(
+        label: '累计充值',
+        value: '\$${user.totalRecharged.toStringAsFixed(2)}',
+        cs: cs,
+        onTap: () => context.push('/users/${user.id}/balance-history'),
+        showArrow: true,
+      ),
       _Row(label: '并发', value: user.currentConcurrency != null ? '${user.currentConcurrency}/${user.concurrency}' : '${user.concurrency}', cs: cs),
       if (user.rpmLimit > 0) _Row(label: 'RPM 限制', value: '${user.rpmLimit}', cs: cs),
       _Row(label: '角色', value: user.isAdmin ? '管理员' : '普通用户', cs: cs),
@@ -91,13 +107,50 @@ class _Info extends StatelessWidget {
 }
 
 class _Row extends StatelessWidget {
-  final String label, value; final ColorScheme cs;
-  const _Row({required this.label, required this.value, required this.cs});
+  final String label, value;
+  final ColorScheme cs;
+  final VoidCallback? onTap;
+  final bool showArrow;
+
+  const _Row({
+    required this.label,
+    required this.value,
+    required this.cs,
+    this.onTap,
+    this.showArrow = false,
+  });
+
   @override
-  Widget build(BuildContext context) => Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-    Text(label, style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant)),
-    Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
-  ]));
+  Widget build(BuildContext context) {
+    Widget content = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant)),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
+              if (showArrow) ...[
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right, size: 16, color: cs.onSurfaceVariant),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: content,
+      );
+    }
+    return content;
+  }
 }
 
 class _Usage extends StatelessWidget {

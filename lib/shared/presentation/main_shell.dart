@@ -16,8 +16,9 @@ class _NavItem {
 
 const _allNavItems = [
   _NavItem(path: '/', icon: Icons.space_dashboard_outlined, activeIcon: Icons.space_dashboard, label: '仪表盘'),
-  _NavItem(path: '/accounts', icon: Icons.dns_outlined, activeIcon: Icons.dns, label: '账号', adminOnly: true),
   _NavItem(path: '/users', icon: Icons.people_outline, activeIcon: Icons.people, label: '用户', adminOnly: true),
+  _NavItem(path: '/groups', icon: Icons.folder_open_outlined, activeIcon: Icons.folder, label: '分组', adminOnly: true),
+  _NavItem(path: '/accounts', icon: Icons.dns_outlined, activeIcon: Icons.dns, label: '账号', adminOnly: true),
   _NavItem(path: '/profile', icon: Icons.person_outline, activeIcon: Icons.person, label: '我的'),
 ];
 
