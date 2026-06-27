@@ -31,7 +31,22 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('账号管理'),
-        actions: [if (state.isLoading) const Padding(padding: EdgeInsets.only(right: 14), child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)))],
+        actions: [
+          if (state.isLoading)
+            const Padding(
+              padding: EdgeInsets.only(right: 14),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: '新增账号',
+            onPressed: () => context.pushNamed('accountEdit'),
+          ),
+        ],
       ),
       body: RefreshIndicator(
         color: cs.primary, backgroundColor: cs.surfaceContainer, onRefresh: n.refresh,

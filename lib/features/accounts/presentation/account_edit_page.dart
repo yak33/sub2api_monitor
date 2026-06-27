@@ -33,11 +33,19 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
   late final TextEditingController _rateMultiplierCtrl;
   late final TextEditingController _loadFactorCtrl;
 
+  // ── 凭证字段 controllers ──
+  // 后端 schema: credentials 结构取决于 type 字段，不同 type 需要不同凭证
+  // 用 Map 统一管理所有可能的字段，切换 type 时只切换显示，不重建 controller
+  final Map<String, TextEditingController> _credControllers = {};
+
   String _platform = 'anthropic';
   String _type = 'oauth';
   String _status = 'active';
   bool _schedulable = true;
-  bool _autoPauseOnExpired = false;
+  // 后端 schema 默认值：auto_pause_on_expired=true（过期自动暂停调度）
+  bool _autoPauseOnExpired = true;
+  // 后端 schema：load_factor 为 Optional().Nillable()，null 表示由调度器自动分配权重
+  bool _loadFactorAuto = true;
   DateTime? _expiresAt;
 
   // ── 分组关联 ──
@@ -47,7 +55,7 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
 
   bool _saving = false;
 
-  // ── 账号类型选项（对齐后端 binding:"oneof=..."）──
+  // ── 账号类型选项（对齐后端 binding:"oneof=oauth setup-token apikey upstream bedrock service_account"）──
   static const _typeOptions = [
     ('oauth', 'OAuth'),
     ('setup-token', 'Setup Token'),
@@ -65,16 +73,57 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
     ('grok', 'Grok'),
   ];
 
+  /// 各 type 的凭证字段配置。
+  /// 格式：(字段名, 显示名, 是否必填, 是否多行)
+  /// 对齐后端 schema 注释 + account_base_url_test.go 实测逻辑。
+  /// base_url 对 apikey/upstream 类型可选，留空使用平台默认地址。
+  static const _credFieldConfig = <String, List<(String, String, bool, bool)>>{
+    'apikey': [
+      ('api_key', 'API Key', true, false),
+      ('base_url', 'Base URL (可选)', false, false),
+    ],
+    'oauth': [
+      ('access_token', 'Access Token', true, true),
+      ('refresh_token', 'Refresh Token', false, true),
+      ('expires_at', 'Token 过期时间 (ISO 8601)', false, false),
+    ],
+    'setup-token': [
+      ('setup_token', 'Setup Token', true, true),
+    ],
+    'upstream': [
+      ('base_url', 'Base URL', true, false),
+      ('api_key', 'API Key', true, false),
+    ],
+    'bedrock': [
+      ('access_key_id', 'Access Key ID', true, false),
+      ('secret_access_key', 'Secret Access Key', true, true),
+      ('region', 'Region (如 us-east-1)', true, false),
+    ],
+    'service_account': [
+      ('project_id', 'Project ID', true, false),
+      ('private_key', 'Private Key (PEM)', true, true),
+      ('client_email', 'Client Email', true, false),
+    ],
+  };
+
   @override
   void initState() {
     super.initState();
     final a = widget.account;
     _nameCtrl = TextEditingController(text: a?.name ?? '');
     _notesCtrl = TextEditingController(text: a?.notes ?? '');
-    _concurrencyCtrl = TextEditingController(text: '${a?.concurrency ?? 1}');
-    _priorityCtrl = TextEditingController(text: '${a?.priority ?? 0}');
+    // 后端 schema 默认值：concurrency=3, priority=50, rate_multiplier=1.0
+    _concurrencyCtrl = TextEditingController(text: '${a?.concurrency ?? 3}');
+    _priorityCtrl = TextEditingController(text: '${a?.priority ?? 50}');
     _rateMultiplierCtrl = TextEditingController(text: '${a?.rateMultiplier ?? 1.0}');
-    _loadFactorCtrl = TextEditingController(text: '${a?.loadFactor ?? 0}');
+    // load_factor 手动模式下的默认显示值（实际是否提交取决于 _loadFactorAuto）
+    _loadFactorCtrl = TextEditingController(text: '${a?.loadFactor ?? 1}');
+
+    // 初始化所有凭证字段 controller（编辑模式下凭证已被后端 redact，初始为空；
+    // 用户填写才表示要更新凭证，留空表示不修改）
+    for (final key in _allCredentialKeys) {
+      _credControllers[key] = TextEditingController();
+    }
 
     if (a != null) {
       _platform = a.platform.toLowerCase();
@@ -82,12 +131,20 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
       _status = a.status;
       _schedulable = a.schedulable;
       _autoPauseOnExpired = a.autoPauseOnExpired;
+      // null = 自动（由调度器分配权重），非 null = 手动指定权重
+      _loadFactorAuto = a.loadFactor == null;
       _expiresAt = a.expiresAt;
       _selectedGroupIds = a.groupIds.toSet();
     }
 
     _loadGroups();
   }
+
+  /// 所有凭证字段的 key 集合（去重），用于初始化 controller
+  static final _allCredentialKeys = _credFieldConfig.values
+      .expand((fields) => fields)
+      .map((f) => f.$1)
+      .toSet();
 
   @override
   void dispose() {
@@ -97,6 +154,9 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
     _priorityCtrl.dispose();
     _rateMultiplierCtrl.dispose();
     _loadFactorCtrl.dispose();
+    for (final c in _credControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -126,24 +186,34 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
     final a = widget.account;
     final name = _nameCtrl.text.trim();
     final notes = _notesCtrl.text.trim();
-    final conc = int.tryParse(_concurrencyCtrl.text) ?? 1;
-    final prio = int.tryParse(_priorityCtrl.text) ?? 0;
+    // 默认值与后端 schema 对齐：concurrency=3, priority=50, rate_multiplier=1.0
+    final conc = int.tryParse(_concurrencyCtrl.text) ?? 3;
+    final prio = int.tryParse(_priorityCtrl.text) ?? 50;
     final mult = double.tryParse(_rateMultiplierCtrl.text) ?? 1.0;
-    final lf = int.tryParse(_loadFactorCtrl.text) ?? 0;
+    final lf = int.tryParse(_loadFactorCtrl.text) ?? 1;
 
     if (a == null) {
       // 创建模式：任何非默认值即为有变动
+      // 后端默认：concurrency=3, priority=50, rate_multiplier=1.0,
+      //           load_factor=null(自动), schedulable=true, auto_pause_on_expired=true
       return name.isNotEmpty ||
           notes.isNotEmpty ||
-          conc != 1 ||
-          prio != 0 ||
+          _hasCredentialsInput() || // 凭证字段有填写即算变动
+          conc != 3 ||
+          prio != 50 ||
           mult != 1.0 ||
-          lf != 0 ||
+          !_loadFactorAuto || // 切到手动模式即算变动
           !_schedulable ||
-          _autoPauseOnExpired ||
+          !_autoPauseOnExpired || // 默认 true，关闭算变动
           _expiresAt != null ||
           _selectedGroupIds.isNotEmpty;
     }
+
+    // 编辑模式：load_factor 自动状态或具体值变化都算变动
+    // - 自动状态变化：_loadFactorAuto != (原 loadFactor == null)
+    // - 手动模式下值变化：!_loadFactorAuto && lf != 原值
+    final lfChanged = _loadFactorAuto != (a.loadFactor == null) ||
+        (!_loadFactorAuto && lf != (a.loadFactor ?? 0));
 
     return name != a.name ||
         notes != (a.notes ?? '') ||
@@ -153,23 +223,64 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
         conc != a.concurrency ||
         prio != a.priority ||
         mult != a.rateMultiplier ||
-        lf != (a.loadFactor ?? 0) ||
+        lfChanged ||
         _schedulable != a.schedulable ||
         _autoPauseOnExpired != a.autoPauseOnExpired ||
         _expiresAt != a.expiresAt ||
+        _hasCredentialsInput() || // 编辑模式填了凭证也算变动
         !_setEquals(_selectedGroupIds, a.groupIds.toSet());
   }
 
   bool _setEquals(Set<int> a, Set<int> b) =>
       a.length == b.length && a.containsAll(b);
 
+  /// 当前 type 下是否有任何凭证字段被填写
+  bool _hasCredentialsInput() {
+    final fields = _credFieldConfig[_type] ?? const [];
+    for (final (key, _, _, _) in fields) {
+      if (_credControllers[key]?.text.trim().isNotEmpty ?? false) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 收集当前 type 的凭证字段，返回 credentials map。
+  /// 仅包含非空字段；全为空时返回空 map（编辑模式表示不修改凭证）。
+  Map<String, dynamic> _collectCredentials() {
+    final fields = _credFieldConfig[_type] ?? const [];
+    final creds = <String, dynamic>{};
+    for (final (key, _, _, _) in fields) {
+      final value = _credControllers[key]?.text.trim() ?? '';
+      if (value.isNotEmpty) {
+        creds[key] = value;
+      }
+    }
+    return creds;
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final conc = int.tryParse(_concurrencyCtrl.text) ?? 1;
-    final prio = int.tryParse(_priorityCtrl.text) ?? 0;
+    final conc = int.tryParse(_concurrencyCtrl.text) ?? 3;
+    final prio = int.tryParse(_priorityCtrl.text) ?? 50;
     final mult = double.tryParse(_rateMultiplierCtrl.text) ?? 1.0;
-    final lf = int.tryParse(_loadFactorCtrl.text) ?? 0;
+    final lf = int.tryParse(_loadFactorCtrl.text) ?? 1;
+    final isEdit = widget.account != null;
+
+    // 凭证收集：
+    // - 创建模式：credentials 必填（后端 binding:"required"），且至少要有一个字段
+    // - 编辑模式：credentials 可选，留空表示不修改现有凭证
+    final credentials = _collectCredentials();
+    if (!isEdit && credentials.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('请至少填写一项凭证信息'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
 
     final payload = <String, dynamic>{
       'name': _nameCtrl.text.trim(),
@@ -179,7 +290,8 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
       'concurrency': conc,
       'priority': prio,
       'rate_multiplier': mult,
-      'load_factor': lf,
+      // load_factor: null = 自动（后端 Optional().Nillable()），数字 = 具体权重
+      'load_factor': _loadFactorAuto ? null : lf,
       'schedulable': _schedulable,
       'auto_pause_on_expired': _autoPauseOnExpired,
       'group_ids': _selectedGroupIds.toList(),
@@ -192,24 +304,27 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
       payload['expires_at'] = null;
     }
 
-    // 编辑模式额外提交状态
-    if (widget.account != null) {
+    // 凭证：创建模式必填，编辑模式仅在用户填写时提交（避免覆盖为空）
+    if (isEdit) {
+      if (credentials.isNotEmpty) {
+        payload['credentials'] = credentials;
+      }
       payload['status'] = _status;
+    } else {
+      payload['credentials'] = credentials;
     }
 
     setState(() => _saving = true);
     try {
       final notifier = ref.read(accountsListProvider.notifier);
-      if (widget.account != null) {
+      if (isEdit) {
         await notifier.updateAccount(widget.account!.id, payload);
       } else {
-        // 创建模式需要 credentials（这里给个空占位，后端校验）
-        payload['credentials'] = {};
         await notifier.createAccount(payload);
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(widget.account != null ? '更新成功' : '创建成功')),
+          SnackBar(content: Text(isEdit ? '更新成功' : '创建成功')),
         );
         Navigator.pop(context);
       }
@@ -352,6 +467,10 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
                         ),
                         const SizedBox(height: 18),
 
+                        // ── 4.1 凭证信息（根据类型动态显示字段）──
+                        _buildCredentialsSection(isEdit),
+                        const SizedBox(height: 18),
+
                         // ── 5. 状态（仅编辑模式）──
                         if (isEdit) ...[
                           _buildLabel('状态'),
@@ -378,23 +497,23 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
 
                         // 并发数
                         _buildLabel('并发数', icon: Icons.help_outline,
-                            tooltip: '该账号允许的最大并发请求数'),
+                            tooltip: '该账号允许的最大并发请求数（默认 3）'),
                         TextFormField(
                           controller: _concurrencyCtrl,
                           keyboardType: TextInputType.number,
                           validator: (v) => (int.tryParse(v ?? '') == null) ? '请输入有效整数' : null,
-                          decoration: const InputDecoration(hintText: '默认 1'),
+                          decoration: const InputDecoration(hintText: '默认 3'),
                         ),
                         const SizedBox(height: 14),
 
-                        // 优先级
+                        // 优先级（后端语义：数值越小优先级越高，默认 50）
                         _buildLabel('优先级', icon: Icons.help_outline,
-                            tooltip: '数值越高，优先级越高。相同条件下优先调度高优先级账号'),
+                            tooltip: '数值越小优先级越高。相同条件下优先调度低数值账号（默认 50）'),
                         TextFormField(
                           controller: _priorityCtrl,
                           keyboardType: TextInputType.number,
                           validator: (v) => (int.tryParse(v ?? '') == null) ? '请输入有效整数' : null,
-                          decoration: const InputDecoration(hintText: '默认 0'),
+                          decoration: const InputDecoration(hintText: '默认 50'),
                         ),
                         const SizedBox(height: 14),
 
@@ -409,14 +528,26 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
                         ),
                         const SizedBox(height: 14),
 
-                        // 负载系数
+                        // 负载系数（null = 自动，数字 = 具体权重）
                         _buildLabel('负载系数', icon: Icons.help_outline,
-                            tooltip: '影响负载均衡权重。0 为自动'),
-                        TextFormField(
-                          controller: _loadFactorCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(hintText: '0 = 自动'),
+                            tooltip: '影响负载均衡权重。开启"自动"由调度器决定，关闭后可手动指定权重值'),
+                        _buildSwitchTile(
+                          title: '自动负载系数',
+                          tooltip: '开启后由调度器自动分配权重；关闭后使用下方指定的固定权重',
+                          value: _loadFactorAuto,
+                          activeLabel: '自动',
+                          inactiveLabel: '手动',
+                          onChanged: (v) => setState(() => _loadFactorAuto = v),
                         ),
+                        if (!_loadFactorAuto) ...[
+                          const SizedBox(height: 8),
+                          TextFormField(
+                            controller: _loadFactorCtrl,
+                            keyboardType: TextInputType.number,
+                            validator: (v) => (int.tryParse(v ?? '') == null) ? '请输入有效整数' : null,
+                            decoration: const InputDecoration(hintText: '负载权重（正整数）'),
+                          ),
+                        ],
 
                         const Divider(height: 32),
 
@@ -536,6 +667,101 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
   // ═══════════════════════════════════════════════
   //  复用型构建方法
   // ═══════════════════════════════════════════════
+
+  /// 构建凭证信息区域。根据当前 [_type] 动态渲染对应的凭证字段。
+  ///
+  /// 后端 schema: credentials 结构取决于 type 字段，不同类型需要不同凭证。
+  /// - 创建模式：必填字段强制校验
+  /// - 编辑模式：所有字段可选（留空表示不修改现有凭证，后端凭证已 redact）
+  Widget _buildCredentialsSection(bool isEdit) {
+    final cs = Theme.of(context).colorScheme;
+    final fields = _credFieldConfig[_type] ?? const [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '凭证信息',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: cs.primary),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          isEdit
+              ? '留空表示不修改现有凭证（后端凭证不回显）'
+              : '创建账号时凭证必填，请按类型填写',
+          style: const TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+        const SizedBox(height: 12),
+        for (final (key, label, required, multiline) in fields) ...[
+          _buildLabel(
+            required ? '$label *' : label,
+            icon: Icons.help_outline,
+            tooltip: _credFieldHints[key] ?? '请输入$label',
+          ),
+          // 注意：Flutter 框架限制 obscureText 与 maxLines>1 不可同时使用
+          // 多行字段（token/private_key）默认明文显示，单行敏感字段才脱敏
+          // spread for-body 内不能用 final 声明，全部内联到参数中
+          TextFormField(
+            controller: _credControllers[key],
+            maxLines: (_shouldObscure(key) && !multiline) ? 1 : (multiline ? 4 : 1),
+            obscureText: _shouldObscure(key) && !multiline && !(_credVisible[key] ?? false),
+            keyboardType: multiline
+                ? TextInputType.multiline
+                : (key == 'client_email' ? TextInputType.emailAddress : TextInputType.text),
+            validator: (v) {
+              // 创建模式下必填字段校验
+              if (!isEdit && required && (v == null || v.trim().isEmpty)) {
+                return '请输入$label';
+              }
+              return null;
+            },
+            decoration: InputDecoration(
+              hintText: '请输入$label',
+              suffixIcon: (_shouldObscure(key) && !multiline)
+                  ? IconButton(
+                      icon: Icon(
+                        _credVisible[key] == true ? Icons.visibility_off : Icons.visibility,
+                        size: 18,
+                      ),
+                      onPressed: () => setState(() {
+                        _credVisible[key] = !(_credVisible[key] ?? false);
+                      }),
+                    )
+                  : null,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ],
+    );
+  }
+
+  /// 敏感字段需要脱敏显示（点击眼睛图标可切换明文）
+  static const _sensitiveKeys = {
+    'api_key', 'access_token', 'refresh_token', 'setup_token',
+    'secret_access_key', 'private_key',
+  };
+
+  bool _shouldObscure(String key) => _sensitiveKeys.contains(key);
+
+  /// 各凭证字段的帮助提示
+  static const _credFieldHints = {
+    'api_key': '平台的 API Key，如 sk-ant-xxx',
+    'base_url': '自定义 API 端点。留空使用平台默认地址（如 https://api.anthropic.com）',
+    'access_token': 'OAuth 授权后的访问令牌',
+    'refresh_token': '用于刷新 access_token 的令牌（可选）',
+    'expires_at': 'Token 过期时间，ISO 8601 格式如 2026-12-31T23:59:59Z',
+    'setup_token': '平台提供的 Setup Token',
+    'access_key_id': 'AWS Access Key ID',
+    'secret_access_key': 'AWS Secret Access Key',
+    'region': 'AWS 区域，如 us-east-1',
+    'project_id': 'GCP 项目 ID',
+    'private_key': 'GCP 服务账号的 Private Key（PEM 格式，含 BEGIN/END 标记）',
+    'client_email': '服务账号邮箱，如 xxx@project.iam.gserviceaccount.com',
+  };
+
+  /// 凭证字段的明文/脱敏显示状态（key -> 是否明文）
+  final Map<String, bool> _credVisible = {};
 
   Widget _buildLabel(String text, {IconData? icon, String? tooltip}) {
     return Padding(
