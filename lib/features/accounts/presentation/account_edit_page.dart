@@ -38,6 +38,11 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
   // 用 Map 统一管理所有可能的字段，切换 type 时只切换显示，不重建 controller
   final Map<String, TextEditingController> _credControllers = {};
 
+  /// 凭证字段初始文本快照（initState 末尾拍照）。
+  /// _hasChanges 对比"当前文本 vs 快照"来判断用户是否改动凭证，
+  /// 彻底绕开"回填值 vs 后端原值"对比中的 trim/类型转换等边缘情况误报。
+  late final Map<String, String> _initCredTexts;
+
   String _platform = 'anthropic';
   String _type = 'oauth';
   String _status = 'active';
@@ -106,6 +111,20 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
     ],
   };
 
+  /// 为 controller 添加"内容变更 → setState"监听。
+  /// 仅在 hasChanges 结果发生变化时才 rebuild，避免每次击键都全量重建。
+  bool _lastHasChanges = false;
+
+  void _addDirtyListener(TextEditingController ctrl) {
+    ctrl.addListener(() {
+      final now = _hasChanges();
+      if (now != _lastHasChanges) {
+        _lastHasChanges = now;
+        setState(() {});
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -119,8 +138,7 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
     // load_factor 手动模式下的默认显示值（实际是否提交取决于 _loadFactorAuto）
     _loadFactorCtrl = TextEditingController(text: '${a?.loadFactor ?? 1}');
 
-    // 初始化所有凭证字段 controller（编辑模式下凭证已被后端 redact，初始为空；
-    // 用户填写才表示要更新凭证，留空表示不修改）
+    // 初始化所有凭证字段 controller
     for (final key in _allCredentialKeys) {
       _credControllers[key] = TextEditingController();
     }
@@ -135,6 +153,35 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
       _loadFactorAuto = a.loadFactor == null;
       _expiresAt = a.expiresAt;
       _selectedGroupIds = a.groupIds.toSet();
+
+      // 回填凭证：后端 RedactCredentials 已剥离敏感字段（api_key/access_token 等），
+      // 但保留非敏感字段（如 base_url、region、project_id、client_email、expires_at）。
+      // 这些字段可直接回填到输入框，用户编辑时看到当前值，留空或不改即维持原值。
+      for (final entry in a.credentials.entries) {
+        final ctrl = _credControllers[entry.key];
+        if (ctrl != null && entry.value != null) {
+          ctrl.text = entry.value.toString();
+        }
+      }
+    }
+
+    // 拍照凭证初始文本：必须在所有回填完成后，用于精确判断用户是否改动。
+    // 后续 _hasChanges 对比"当前文本 vs 此快照"，不依赖后端原值，避免 trim 等边缘误报。
+    _initCredTexts = {
+      for (final key in _allCredentialKeys)
+        key: _credControllers[key]?.text ?? '',
+    };
+
+    // 为所有 TextEditingController 添加监听器，
+    // 输入内容变化时触发 setState，使 PopScope.canPop 及时更新。
+    _addDirtyListener(_nameCtrl);
+    _addDirtyListener(_notesCtrl);
+    _addDirtyListener(_concurrencyCtrl);
+    _addDirtyListener(_priorityCtrl);
+    _addDirtyListener(_rateMultiplierCtrl);
+    _addDirtyListener(_loadFactorCtrl);
+    for (final c in _credControllers.values) {
+      _addDirtyListener(c);
     }
 
     _loadGroups();
@@ -198,7 +245,7 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
       //           load_factor=null(自动), schedulable=true, auto_pause_on_expired=true
       return name.isNotEmpty ||
           notes.isNotEmpty ||
-          _hasCredentialsInput() || // 凭证字段有填写即算变动
+          _hasCredChanges() || // 凭证字段有填写即算变动
           conc != 3 ||
           prio != 50 ||
           mult != 1.0 ||
@@ -227,34 +274,43 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
         _schedulable != a.schedulable ||
         _autoPauseOnExpired != a.autoPauseOnExpired ||
         _expiresAt != a.expiresAt ||
-        _hasCredentialsInput() || // 编辑模式填了凭证也算变动
+        _hasCredChanges() || // 对比当前文本 vs 初始快照，精确判断凭证是否改动
         !_setEquals(_selectedGroupIds, a.groupIds.toSet());
   }
 
-  bool _setEquals(Set<int> a, Set<int> b) =>
-      a.length == b.length && a.containsAll(b);
-
-  /// 当前 type 下是否有任何凭证字段被填写
-  bool _hasCredentialsInput() {
+  /// 判断当前 type 的凭证字段是否有任何改动（对比 initState 拍的快照）。
+  /// 不依赖后端原值，避免 trim/类型转换等边缘情况导致的误报。
+  bool _hasCredChanges() {
     final fields = _credFieldConfig[_type] ?? const [];
     for (final (key, _, _, _) in fields) {
-      if (_credControllers[key]?.text.trim().isNotEmpty ?? false) {
+      final current = _credControllers[key]?.text ?? '';
+      if (current != (_initCredTexts[key] ?? '')) {
         return true;
       }
     }
     return false;
   }
 
+  bool _setEquals(Set<int> a, Set<int> b) =>
+      a.length == b.length && a.containsAll(b);
+
   /// 收集当前 type 的凭证字段，返回 credentials map。
-  /// 仅包含非空字段；全为空时返回空 map（编辑模式表示不修改凭证）。
+  /// - 创建模式：收集所有非空字段
+  /// - 编辑模式：仅收集与原值不同的字段（含新增的敏感字段），
+  ///   未改动的非敏感字段（如 base_url 与原值相同）会被跳过，避免无谓重提交。
   Map<String, dynamic> _collectCredentials() {
     final fields = _credFieldConfig[_type] ?? const [];
     final creds = <String, dynamic>{};
+    final a = widget.account;
+    final origCreds = a?.credentials ?? const {};
     for (final (key, _, _, _) in fields) {
       final value = _credControllers[key]?.text.trim() ?? '';
-      if (value.isNotEmpty) {
-        creds[key] = value;
+      if (value.isEmpty) continue;
+      // 编辑模式：跳过与原值相同的字段（base_url 没改就不重交）
+      if (a != null && value == (origCreds[key]?.toString() ?? '')) {
+        continue;
       }
+      creds[key] = value;
     }
     return creds;
   }
@@ -365,9 +421,13 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isEdit = widget.account != null;
+    final hasChanges = _hasChanges();
+    // 同步 dirty 追踪标记，避免 Dropdown/Switch 触发的 rebuild
+    // 导致 text listener 产生多余的 setState。
+    _lastHasChanges = hasChanges;
 
     return PopScope(
-      canPop: !_hasChanges() || _saving,
+      canPop: !hasChanges || _saving,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final proceed = await showDialog<bool>(
@@ -687,7 +747,7 @@ class _AccountEditPageState extends ConsumerState<AccountEditPage> {
         const SizedBox(height: 4),
         Text(
           isEdit
-              ? '留空表示不修改现有凭证（后端凭证不回显）'
+              ? '非敏感字段（如 Base URL）已回显当前值；敏感字段（API Key/Token 等）不回显，留空表示不修改'
               : '创建账号时凭证必填，请按类型填写',
           style: const TextStyle(fontSize: 12, color: Colors.grey),
         ),

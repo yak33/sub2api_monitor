@@ -51,6 +51,15 @@ class AdminAccount {
   // ── 关联分组 ──
   final List<AccountGroup> groups;
 
+  // ── 凭证 ──
+  /// 后端返回的已 redact 凭证（仅含非敏感字段，如 base_url）。
+  /// 敏感字段（api_key/access_token 等）已被后端剥离，不可见。
+  final Map<String, dynamic> credentials;
+
+  /// 凭证状态标记：{has_api_key: true, has_access_token: false, ...}
+  /// 用于在编辑态判断哪些敏感凭证已经存在（无需重填）。
+  final Map<String, bool> credentialsStatus;
+
   const AdminAccount({
     required this.id,
     required this.name,
@@ -86,6 +95,8 @@ class AdminAccount {
     this.rateLimitResetAt,
     this.overloadUntil,
     this.groups = const [],
+    this.credentials = const {},
+    this.credentialsStatus = const {},
   });
 
   // ── 便捷属性 ──
@@ -160,6 +171,12 @@ class AdminAccount {
       rateLimitResetAt: dt(json['rate_limit_reset_at']),
       overloadUntil: dt(json['overload_until']),
       groups: groups,
+      // 凭证：后端 RedactCredentials 已剥离敏感字段，仅保留非敏感字段（如 base_url）
+      credentials: (json['credentials'] as Map<String, dynamic>?) ?? const {},
+      // credentials_status: {has_<key>: bool}，标记敏感字段是否已存在
+      credentialsStatus: (json['credentials_status'] as Map<String, dynamic>?)
+              ?.map((k, v) => MapEntry(k, v == true)) ??
+          const {},
     );
   }
 }
